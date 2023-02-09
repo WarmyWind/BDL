@@ -3,8 +3,9 @@ import gpytorch
 import numpy as np
 
 class ApproximateGPModel(gpytorch.models.ApproximateGP):
-    def __init__(self, inducing_points):
-        variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(inducing_points.size(-1))
+    def __init__(self, n_inducing_points):
+        inducing_points = torch.rand(n_inducing_points, 3)
+        variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(inducing_points.size(0))
         variational_strategy = gpytorch.variational.VariationalStrategy(
             self, inducing_points, variational_distribution, learn_inducing_locations=True
         )

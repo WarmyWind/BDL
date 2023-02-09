@@ -6,6 +6,18 @@ from pathlib import Path
 import torch
 import numpy as np
 
+def get_device():
+    use_cuda = torch.cuda.is_available()
+    device = torch.device("cuda:0" if use_cuda else "cpu")
+    return device
+
+def one_hot_embedding(labels, num_classes, device=None):
+    # Convert to One Hot Encoding
+    if device == None:
+        device = get_device()
+    y = torch.eye(num_classes)
+    y = y.to(device)
+    return y[labels.flatten().type(torch.long)]
 
 def set_seed(seed):
     if seed is None:

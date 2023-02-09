@@ -7,8 +7,8 @@ parser = argparse.ArgumentParser()
 ########################### 通用参数 #############################
 parser.add_argument(
     "--method",
-    default="GNN",
-    choices=["GNN", "GNN+GP"],
+    default="GraphDKL",
+    choices=["GNN", "BGNN", "MCDropoutGNN","GraphDKL"],
     type=str,
     help="Specify method",
 )
@@ -19,8 +19,8 @@ parser.add_argument("--task", default='sum_rate_maximization', type=str, help="S
 #     help="Dataset path",
 # )
 
-parser.add_argument("--batch_size", type=int, default=64, help="Batch size to use for training")
-parser.add_argument("--epochs", type=int, default=300, help="Training number of epochs")
+parser.add_argument("--batch_size", type=int, default=128, help="Batch size to use for training")
+parser.add_argument("--epochs", type=int, default=100, help="Training number of epochs")
 parser.add_argument("--learning_rate", type=float, default=1e-3, help="Learning rate")
 parser.add_argument("--input_dim", type=int, default=15, help="input dimension")
 parser.add_argument("--output_dim", type=int, default=15, help="output dimension")
@@ -37,8 +37,8 @@ parser.add_argument(
 )
 
 
-# ########################### BNN\MCDropout参数 ##################################
-# parser.add_argument("--sample_nbr", type=int, default=5, help="Number of MC samples to get loss")
+########################### BNN\MCDropout参数 ##################################
+parser.add_argument("--sample_nbr", type=int, default=5, help="Number of MC samples to get loss")
 
 ########################### MCDropout\DUE\SNGP参数 #############################
 parser.add_argument("--dropout_rate", type=float, default=0.2, help="Dropout rate")

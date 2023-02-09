@@ -7,6 +7,10 @@ def loss_divided_by_uncertainty(y_std, loss, low_uncertainty_ratio, high_uncerta
     except:
         pass
 
+    if len(y_std.shape) == 1:
+        y_std = y_std[:, np.newaxis]
+        loss = loss[:, np.newaxis]
+
     idx = np.argsort(y_std, axis=0)
     low_uncertainty_num = int(y_std.shape[0] * low_uncertainty_ratio)
     high_uncertainty_num = int(y_std.shape[0] * high_uncertainty_ratio)

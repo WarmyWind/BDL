@@ -19,14 +19,14 @@ from sklearn.datasets import load_boston
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
-from gnn.model import IGCNet
+from gnn.model import IGCNet, BayesianIGCNet, MCDropoutIGCNet
 from bnn.model import BayesianRegressor, evaluate_regression
 from mcdropout.model import MCDropoutRegressor
 from svgp.model import MultitaskGPModel, ApproximateGPModel
 from due.dkl import DKL, GP, initial_values
 from due.sngp import Laplace
 from due.fc_resnet import FCResNet
-
+from graphdkl.model import GraphDKL
 
 from lib.datasets import get_wGaussian_graph_data
 
@@ -46,14 +46,14 @@ def main(hparams):
         var_db = 10
         var = 1 / 10 ** (var_db / 10)
         ds_train = get_wGaussian_graph_data(K, num_train, seed=trainseed, var_noise=var, WMMSE_eval=False)
-        ds_test = get_wGaussian_graph_data(K+2, num_test, seed=testseed, var_noise=var, WMMSE_eval=True)
+        ds_test = get_wGaussian_graph_data(K, num_test, seed=testseed, var_noise=var, WMMSE_eval=True)
         dl_train = torch_geometric.data.DataLoader(ds_train, batch_size=batch_size, shuffle=True)
-        dl_test = torch_geometric.data.DataLoader(ds_test, batch_size=1, shuffle=False)
+        dl_test = torch_geometric.data.DataLoader(ds_test, batch_size=num_test, shuffle=False)
     else:
         raise Exception("Invalid task!")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    method = hparams.method  # 'GNN' , 'GNN+GP'
+    method = hparams.method  # 'GNN' , 'BGNN'
 
     lr = hparams.learning_rate
     epochs = hparams.epochs
@@ -64,29 +64,48 @@ def main(hparams):
     hidden_dim = hparams.hidden_dim
     output_dim = hparams.output_dim
     dropout_rate = hparams.dropout_rate
-    if method =='GNN':
-        model = IGCNet()
-        def sr_loss(data, out, K):
-            power = out[:, 2]
-            power = torch.reshape(power, (-1, K, 1))
-            abs_H = data.y
-            abs_H_2 = torch.pow(abs_H, 2)
-            rx_power = torch.mul(abs_H_2, power)
-            mask = torch.eye(K)
-            mask = mask.to(device)
-            valid_rx_power = torch.sum(torch.mul(rx_power, mask), 1)
-            interference = torch.sum(torch.mul(rx_power, 1 - mask), 1) + var
-            rate = torch.log(1 + torch.div(valid_rx_power, interference))
-            w_rate = torch.mul(data.pos, rate)
-            sum_rate = torch.mean(torch.sum(w_rate, 1))
+
+    def sr_loss(data, out, K, reduction='sum'):
+        if len(out.size()) == 2:
+            power = out[:, -1]
+        else:
+            power = out
+        power = torch.reshape(power, (-1, K, 1))
+        abs_H = data.y
+        abs_H_2 = torch.pow(abs_H, 2)
+        rx_power = torch.mul(abs_H_2, power)
+        mask = torch.eye(K)
+        mask = mask.to(device)
+        valid_rx_power = torch.sum(torch.mul(rx_power, mask), 1)
+        interference = torch.sum(torch.mul(rx_power, 1 - mask), 1) + var
+        rate = torch.log(1 + torch.div(valid_rx_power, interference))
+        w_rate = torch.mul(data.pos, rate)
+        sum_rate = torch.sum(w_rate, 1)
+        if reduction == 'sum':
+            loss = torch.neg(torch.mean(sum_rate))
+        elif reduction == 'none':
             loss = torch.neg(sum_rate)
-            return loss
-    elif method == 'GNN+GP':
+        else:
+            raise Exception("Invalid reduction")
+        return loss
+
+
+
+    if method == 'GNN':
+        model = IGCNet()
+    elif method == 'BGNN':
+        model = BayesianIGCNet()
+    elif method == 'MCDropoutGNN':
+        model = MCDropoutIGCNet()
+    elif method == 'GraphDKL':
+        feature_extractor = IGCNet()
         n_inducing_points = hparams.n_inducing_points
-        kernel = "RBF"
         gp = ApproximateGPModel(n_inducing_points)
-
-
+        model = GraphDKL(feature_extractor, gp)
+        # gp.variational_strategy.kl_divergence()
+        # likelihood = gpytorch.likelihoods.GaussianLikelihood().to(device)
+        # elbo_fn = VariationalELBO(likelihood, model.gp, num_data=len(ds_train))
+        # loss_fn = lambda x, y: -elbo_fn(x, y)
     else:
         raise Exception('Invalid method!')
     model.to(device)
@@ -99,7 +118,7 @@ def main(hparams):
     #     parameters.append({"params": likelihood.parameters(), "lr": lr})
 
     optimizer = optim.Adam(parameters, lr=lr)
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.9)
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20*np.ceil(num_train/batch_size), gamma=0.9)
     pbar = ProgressBar()
 
 
@@ -116,8 +135,42 @@ def main(hparams):
         if method == 'GNN':
             out = model(x)
             loss = sr_loss(x, out, K)
+        elif method == 'BGNN':
+            complexity_cost_weight = 1 / num_train
+            complexity_cost_weight = complexity_cost_weight \
+                                     * len(dl_train) * 2**(len(dl_train)-engine.state.iteration) \
+                                     / (2**(len(dl_train)-1))
+            loss = model.my_sample_elbo(x,
+                                     sr_loss,
+                                     sample_nbr=hparams.sample_nbr,
+                                     complexity_cost_weight=complexity_cost_weight,
+                                     K=K)
+        elif method == 'MCDropoutGNN':
+            # out = model(x)
+            _, loss = model.sample_detailed_loss(x,
+                                        sr_loss,
+                                        sample_nbr=hparams.sample_nbr,
+                                        K=K)
+        elif method == 'GraphDKL':
+            complexity_cost_weight = 1 / num_train
+            complexity_cost_weight = complexity_cost_weight \
+                                     * len(dl_train) * 2 ** (len(dl_train) - engine.state.iteration) \
+                                     / (2 ** (len(dl_train) - 1))
+            _, _, loss = model.detailed_loss(x,
+                                             sr_loss,
+                                             labels=None,
+                                             complexity_cost_weight= complexity_cost_weight,
+                                             K=K)
+            if torch.isnan(loss):
+                _, _, loss = model.detailed_loss(x,
+                                                 sr_loss,
+                                                 labels=None,
+                                                 complexity_cost_weight=complexity_cost_weight,
+                                                 K=K)
+                raise Exception('Loss is nan!')
         else:
             raise Exception('Invalid method!')
+
 
         loss.backward()
         optimizer.step()
@@ -127,18 +180,37 @@ def main(hparams):
 
 
     def eval_step(engine, batch):
-        model.eval()
-        # if method == 'DUE':
-        #     likelihood.eval()
+        if method != 'MCDropoutGNN':
+            model.eval()
+
 
         x = batch
         x = x.to(device)
         # y = y.to(device)
-        # y.squeeze_()
 
         if method == 'GNN':
             out = model(x)
-            loss = sr_loss(x, out, K+2)
+            loss = sr_loss(x, out, K)
+        elif method == 'BGNN':
+            complexity_cost_weight = 1 / num_train
+            complexity_cost_weight = complexity_cost_weight \
+                                     * len(dl_train) * 2 ** (len(dl_train) - engine.state.iteration) \
+                                     / (2 ** (len(dl_train) - 1))
+            _, _, loss, _ = model.my_sample_elbo_detailed_loss(x,
+                                                   sr_loss,
+                                                   sample_nbr=hparams.sample_nbr,
+                                                   complexity_cost_weight=1,
+                                                   K=K)
+        elif method == 'MCDropoutGNN':
+            _, loss = model.sample_detailed_loss(x,
+                                        sr_loss,
+                                        sample_nbr=hparams.sample_nbr,
+                                        K=K)
+        elif method == 'GraphDKL':
+            _, loss, _ = model.detailed_loss(x,
+                                             sr_loss,
+                                             labels=None,
+                                             K=K)
         else:
             raise Exception('Invalid method!')
 
@@ -156,11 +228,11 @@ def main(hparams):
     metric.attach(evaluator, "loss")
 
 
-    @trainer.on(Events.EPOCH_COMPLETED(every=int(5)))
+    @trainer.on(Events.EPOCH_COMPLETED(every=int(1)))
     def log_results(trainer):
         evaluator.run(dl_test)
         print(f"Results - Epoch: {trainer.state.epoch} - "
-              f"Test Mse loss: {evaluator.state.metrics['loss']:.4f} - "
+              f"Test loss: {evaluator.state.metrics['loss']:.4f} - "
               f"Train Loss: {trainer.state.metrics['loss']:.4f}")
         writer.add_scalar("Loss/train", trainer.state.metrics['loss'], trainer.state.epoch)
         writer.add_scalar("Loss/eval", evaluator.state.metrics['loss'], trainer.state.epoch)

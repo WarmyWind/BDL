@@ -169,14 +169,14 @@ def main(hparams):
             raise Exception('Invalid method!')
         return loss, low_uncertainty_loss, high_uncertainty_loss, std
 
-    # std, loss = np.array([]), np.array([])
-    # for batch in dl_test:
-    #     _loss, _low_uncertainty_loss, _high_uncertainty_loss, _std = test_step(batch)
-    #     if len(std) == 0:
-    #         loss, std = _loss.cpu().detach().numpy(), _std
-    #     else:
-    #         loss = np.concatenate([loss, _loss.cpu().detach().numpy()], axis=0)
-    #         std = np.concatenate([std, _std], axis=0)
+    std, loss = np.array([]), np.array([])
+    for batch in dl_test:
+        _loss, _low_uncertainty_loss, _high_uncertainty_loss, _std = test_step(batch)
+        if len(std) == 0:
+            loss, std = _loss.cpu().detach().numpy(), _std
+        else:
+            loss = np.concatenate([loss, _loss.cpu().detach().numpy()], axis=0)
+            std = np.concatenate([std, _std], axis=0)
     # np.save('./test_result/1009/' + hparams.method + '_loss_std.npy', {'loss':loss, 'std':std})
 
 
@@ -224,7 +224,7 @@ if __name__ == "__main__":
         __getattr__ = dict.__getitem__
 
     import json
-    root_path = 'runs/MCDropout/2022-10-08-Saturday-21-33-07'
+    root_path = 'runs/large_channel_predict/BNN/2022-10-10-Monday-20-53-40'
     with open(root_path + '/hparams.json') as file:
         hparams_dict = json.load(file)
     hparams = Dotdict(hparams_dict)
