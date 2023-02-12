@@ -76,6 +76,7 @@ class DNNBinaryClassifier(nn.Module):
             np.array(probs.detach().cpu()), \
             acc.detach().cpu()
 
+
 class DNNClassifier(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, hidden_depth, learn_rate, weight_decay, loss_func):
         super(DNNClassifier, self).__init__()
@@ -118,7 +119,7 @@ class DNNClassifier(nn.Module):
     def get_loss(self, inputs, labels):
         outputs = self(inputs)
         y = one_hot_embedding(labels, self.output_dim)
-        loss = self.loss_func(outputs, y.float(), reduction='sum')
+        loss = self.loss_func(outputs, y.float(), reduction='mean')
 
         return loss
 
@@ -136,11 +137,11 @@ class DNNClassifier(nn.Module):
         _, preds = torch.max(mean, 1)
         probs = F.softmax(mean, dim=1)
         y = one_hot_embedding(labels, self.num_classes)
-        # loss = self.model.loss_func(mean, y.float(), reduction='sum')
+        loss = self.loss_func(mean, y.float(), reduction='mean')
 
         match = torch.reshape(torch.eq(preds, labels).float(), (-1, 1))
         acc = torch.mean(match)
 
         return np.array(mean.detach().cpu()), \
             np.array(probs.detach().cpu()), \
-            acc.detach().cpu()
+            loss.detach().cpu(), acc.detach().cpu()

@@ -10,10 +10,6 @@ from ignite.engine import Events, Engine
 from ignite.metrics import Average, Loss
 from ignite.contrib.handlers import ProgressBar
 
-from sklearn.datasets import load_wine
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-
 from bnn.model import BayesianRegressor
 from mcdropout.model import MCDropoutRegressor, log_gaussian_loss
 from ensemble.model import BootstrapEnsemble
@@ -121,10 +117,6 @@ def main(hparams):
             optimizer.step()
 
         elif method == 'BNN':
-            # complexity_cost_weight = 1 / X_train.shape[0]
-            # complexity_cost_weight = complexity_cost_weight \
-            #                          * len(dl_train) * 2**(len(dl_train)-engine.state.iteration) \
-            #                          / (2**(len(dl_train)-1))
             total_iteration = len(dl_train)
             complexity_cost_weight = 2**(total_iteration-engine.state.iteration) / (2**total_iteration-1)
             loss = model.get_loss(inputs=x,

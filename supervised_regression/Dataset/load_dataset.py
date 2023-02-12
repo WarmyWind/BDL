@@ -84,9 +84,9 @@ def load_uci_wine(test_size, valid_size, train_batch_size, valid_batch_size, see
     Data_set = load_wine()
     X = Data_set.data
     y = Data_set.target[:, np.newaxis]
-    if norm == True:
-        X = StandardScaler().fit_transform(X)
-        y = StandardScaler().fit_transform(y)
+    # if norm == True:
+    #     X = StandardScaler().fit_transform(X)
+    #     y = StandardScaler().fit_transform(y)
 
     # Split dataset into train, valid and test set
     return split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_size, seed, norm)
@@ -98,9 +98,9 @@ def load_large_channel(dataset_path, input_dim, output_dim, test_size, valid_siz
     y = Data_set['y']
     X = X[:, -input_dim:]
     y = y[:, :output_dim]
-    if norm == True:
-        X = StandardScaler().fit_transform(X)
-        y = StandardScaler().fit_transform(y)
+    # if norm == True:
+    #     X = StandardScaler().fit_transform(X)
+    #     y = StandardScaler().fit_transform(y)
 
     # Split dataset into train, valid and test set
     return split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_size, seed, norm)

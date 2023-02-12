@@ -125,7 +125,7 @@ class MCDropoutClassifier(nn.Module):
         self.loss_func = F.cross_entropy
 
         self.input_dim = input_dim
-        self.num_classes= output_dim
+        self.num_classes = output_dim
 
         self.input_layer = nn.Linear(input_dim, hidden_dim)
         # self.fc2 = nn.Linear(hidden_dim, hidden_dim)

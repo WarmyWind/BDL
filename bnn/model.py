@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 
-from blitz.modules import BayesianLinear
+from blitz.modules import BayesianLinear, BayesianConv2d
 from blitz.utils import variational_estimator
 from lib.utils import get_device, one_hot_embedding
 
@@ -125,9 +125,10 @@ class BayesianRegressor(nn.Module):
 
 @variational_estimator
 class BayesianClassifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, hidden_depth):
+    def __init__(self, input_dim, hidden_dim, output_dim, hidden_depth, criterion):
         super().__init__()
         # self.hetero_noise_est = hetero_noise_est
+        self.criterion = criterion
         self.input_dim = input_dim
         self.num_classes = output_dim
         # self.linear = nn.Linear(input_dim, output_dim)
@@ -137,6 +138,7 @@ class BayesianClassifier(nn.Module):
         )
         # self.blinear2 = BayesianLinear(hidden_dim, hidden_dim)
         self.output_layer = BayesianLinear(hidden_dim, output_dim)
+
 
     def forward(self, x):
         x_ = self.input_layer(x)
@@ -149,7 +151,7 @@ class BayesianClassifier(nn.Module):
         return x_
 
 
-    def get_loss(self, inputs, labels, criterion, sample_nbr, complexity_cost_weight=1):
+    def get_loss(self, inputs, labels, sample_nbr, complexity_cost_weight=1):
         likelihood_cost = 0
         complexity_cost = 0
         for _i in range(sample_nbr):
@@ -157,20 +159,14 @@ class BayesianClassifier(nn.Module):
             y = one_hot_embedding(labels, self.num_classes)
             _, preds = torch.max(outputs, 1)
 
-            likelihood_cost += criterion(outputs, y.float(), reduction='sum')
+            likelihood_cost += self.criterion(outputs, y.float(), reduction='sum')
 
             complexity_cost += self.nn_kl_divergence() * complexity_cost_weight
 
         loss = (likelihood_cost + complexity_cost) / sample_nbr
         return loss
 
-    def sample_detailed_loss(self,
-                                  inputs,
-                                  labels,
-                                  criterion,
-                                  sample_nbr,
-                                  complexity_cost_weight=1):
-
+    def sample_detailed_loss(self, inputs, labels, sample_nbr, complexity_cost_weight=1):
         likelihood_cost = 0
         complexity_cost = 0
 
@@ -181,9 +177,75 @@ class BayesianClassifier(nn.Module):
             _, preds = torch.max(outputs, 1)
 
             means.append(outputs[..., None])
-            likelihood_cost += criterion(outputs, y.float(), reduction='sum')
+            likelihood_cost += self.criterion(outputs, y.float(), reduction='sum')
             complexity_cost += self.nn_kl_divergence() * complexity_cost_weight
 
+        means = torch.cat(means, dim=-1)
+        probs = F.softmax(means, dim=1)
+        prob = probs.mean(dim=-1)
+        mean = means.mean(dim=-1)
+        _, preds = torch.max(mean, 1)
+        # prob = F.softmax(mean, dim=1)
+        loss = (likelihood_cost + complexity_cost) / sample_nbr
+
+        match = torch.reshape(torch.eq(preds, labels).float(), (-1, 1))
+        acc = torch.mean(match)
+
+        return np.array(mean.detach().cpu()), \
+            np.array(prob.detach().cpu()), \
+            loss.detach().cpu(), acc.detach().cpu()
+
+@variational_estimator
+class BayesianLeNet5(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.num_classes = 10
+        self.criterion = F.cross_entropy
+        self.conv1 = BayesianConv2d(3, 16, (5, 5))
+        self.conv2 = BayesianConv2d(16, 32, (5, 5))
+        self.fc1 = BayesianLinear(5*5*32, 120)
+        self.fc2 = BayesianLinear(120, 84)
+        self.fc3 = BayesianLinear(84, 10)
+
+    def forward(self, x):
+        out = F.relu(self.conv1(x))
+        out = F.max_pool2d(out, 2)
+        out = F.relu(self.conv2(out))
+        out = F.max_pool2d(out, 2)
+        out = out.view(out.size(0), -1)
+        out = F.relu(self.fc1(out))
+        out = F.relu(self.fc2(out))
+        out = self.fc3(out)
+        return out
+
+    def get_loss(self, inputs, labels, sample_nbr, complexity_cost_weight=1):
+        likelihood_cost = 0
+        complexity_cost = 0
+        for _i in range(sample_nbr):
+            outputs = self(inputs)
+            y = one_hot_embedding(labels, self.num_classes)
+            _, preds = torch.max(outputs, 1)
+
+            likelihood_cost += self.criterion(outputs, y.float(), reduction='sum')
+
+            complexity_cost += self.nn_kl_divergence() * complexity_cost_weight
+
+        loss = (likelihood_cost + complexity_cost) / sample_nbr
+        return loss
+
+    def sample_detailed_loss(self, inputs, labels, sample_nbr, complexity_cost_weight=1):
+        likelihood_cost = 0
+        complexity_cost = 0
+
+        means = []
+        for _i in range(sample_nbr):
+            outputs = self(inputs)
+            y = one_hot_embedding(labels, self.num_classes)
+            _, preds = torch.max(outputs, 1)
+
+            means.append(outputs[..., None])
+            likelihood_cost += self.criterion(outputs, y.float(), reduction='sum')
+            complexity_cost += self.nn_kl_divergence() * complexity_cost_weight
 
         means = torch.cat(means, dim=-1)
         probs = F.softmax(means, dim=1)

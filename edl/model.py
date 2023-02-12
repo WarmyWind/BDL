@@ -9,9 +9,10 @@ from lib.utils import get_device, one_hot_embedding
 
 
 class EvidentialClassifier(torch.nn.Module):
-    def __init__(self, input_dim, hidden_dim, hidden_depth, output_dim, annealing_step):
+    def __init__(self, input_dim, hidden_dim, hidden_depth, output_dim, annealing_step, criterion):
         super(EvidentialClassifier, self).__init__()
         self.annealing_step = annealing_step
+        self.criterion = criterion
         self.num_classes = output_dim
         self.input_layer = Linear(input_dim, hidden_dim)
         self.hidden_layers = torch.nn.ModuleList(
@@ -31,20 +32,20 @@ class EvidentialClassifier(torch.nn.Module):
         return x_
 
 
-    def get_loss(self, inputs, labels, criterion, epoch, complexity_cost_weight=1):
+    def get_loss(self, inputs, labels, epoch, complexity_cost_weight=1):
         outputs = self(inputs)
         y = one_hot_embedding(labels, self.num_classes)
         _, preds = torch.max(outputs, 1)
-        loss = criterion(outputs, y.float(), epoch, self.num_classes, self.annealing_step, complexity_cost_weight)
+        loss = self.criterion(outputs, y.float(), epoch, self.num_classes, self.annealing_step, complexity_cost_weight)
         return loss
 
-    def sample_detailed_loss(self, inputs, labels, criterion, epoch, complexity_cost_weight=1):
+    def sample_detailed_loss(self, inputs, labels, epoch, complexity_cost_weight=1):
         outputs = self(inputs)
         y = one_hot_embedding(labels, self.num_classes)
         # device = get_device()
         # y = y.to(device)
         _, preds = torch.max(outputs, 1)
-        loss = criterion(outputs, y.float(), epoch, self.num_classes, self.annealing_step, complexity_cost_weight)
+        loss = self.criterion(outputs, y.float(), epoch, self.num_classes, self.annealing_step, complexity_cost_weight)
 
         match = torch.reshape(torch.eq(preds, labels).float(), (-1, 1))
         acc = torch.mean(match)

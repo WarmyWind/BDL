@@ -109,6 +109,40 @@ class DNNClassifier(nn.Module):
 
         return loss
 
+
+class LeNet5(nn.Module):
+    def __init__(self, learn_rate, weight_decay):
+        super().__init__()
+        self.num_classes = 10
+        self.loss_func = F.cross_entropy
+        self.conv1 = nn.Conv2d(3, 16, (5, 5))
+        self.conv2 = nn.Conv2d(16, 32, (5, 5))
+        self.fc1 = nn.Linear(32*5*5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=learn_rate, weight_decay=weight_decay)
+
+    def forward(self, x):
+        out = F.relu(self.conv1(x))
+        out = F.max_pool2d(out, 2)
+        out = F.relu(self.conv2(out))
+        out = F.max_pool2d(out, 2)
+        out = out.view(out.size(0), -1)
+        out = F.relu(self.fc1(out))
+        out = F.relu(self.fc2(out))
+        out = self.fc3(out)
+        return out
+
+
+    def get_loss(self, inputs, labels):
+        outputs = self(inputs)
+        y = one_hot_embedding(labels, self.num_classes)
+        _, preds = torch.max(outputs, 1)
+        loss = self.loss_func(outputs, y.float(), reduction='mean')
+
+        return loss
+
+
 class BootstrapEnsemble(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, hidden_depth, learn_rate, weight_decay, num_net,
                  hetero_noise_est=True, task='regress'):
@@ -130,6 +164,10 @@ class BootstrapEnsemble(nn.Module):
             self.loss_func = F.cross_entropy
             self.net_list = [DNNClassifier(input_dim, hidden_dim, output_dim, hidden_depth,
                                           learn_rate, weight_decay, self.loss_func) for _ in range(num_net)]
+        elif task == 'cifar10':
+            self.loss_func = F.cross_entropy
+            self.net_list = [LeNet5(learn_rate, weight_decay) for _ in range(num_net)]
+
 
     def forward(self, inputs):
         means = []
@@ -200,7 +238,7 @@ class BootstrapEnsemble(nn.Module):
                    np.array(std.detach().cpu()), \
                    loss.detach().cpu(), mse.detach().cpu()
 
-        elif self.task == 'classify':
+        elif self.task == 'classify' or 'cifar10':
             means = []
             for net in self.net_list:
                 outputs = net(inputs)
