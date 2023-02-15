@@ -85,9 +85,9 @@ class MCDropoutRegressor(nn.Module):
         if self.hetero_noise_est:
             noise_stds = torch.cat(noise_stds, dim=-1)
 
-        std = means.var(dim=-1)
+        std = means.std(dim=-1)
         if self.hetero_noise_est:
-            std = (std + noise_stds.mean(dim=-1) ** 2) ** 0.5
+            std = (std ** 2 + noise_stds.mean(dim=-1) ** 2) ** 0.5
 
         # std = means.var(dim=-1)
         if self.hetero_noise_est:

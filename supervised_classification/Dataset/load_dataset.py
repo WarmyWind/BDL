@@ -115,3 +115,50 @@ def load_cifar10(valid_size, train_batch_size, seed, cali_dataset_num=-1):
                                                       )
         caliloader = torch.utils.data.DataLoader(cali_dataset, batch_size=100, shuffle=False, num_workers=2)
         return trainloader, caliloader, testloader
+
+
+def load_mnist(valid_size, train_batch_size, seed, cali_dataset_num=-1):
+    # classes = ('plane', 'car', 'bird', 'cat', 'deer',
+    #            'dog', 'frog', 'horse', 'ship', 'truck')
+    """
+    Load MNIST Dataset
+    """
+
+    # Data
+    print('==> Preparing data..')
+    trainset = torchvision.datasets.MNIST(
+        root='./Dataset', train=True, download=True, transform=transforms.ToTensor())
+
+    torch.manual_seed(seed)  # 为CPU设置随机种子
+    torch.cuda.manual_seed(seed)  # 为GPU设置随机种子
+
+    # 随机划分训练集和验证集
+    if valid_size != 0:
+        train_dataset, valid_dataset = torch.utils.data.random_split(trainset,
+                                                                 [int((1-valid_size)*60000), int(valid_size*60000)],
+                                                                 )
+        trainloader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=train_batch_size, shuffle=True, num_workers=2)
+        validloader = torch.utils.data.DataLoader(
+            valid_dataset, batch_size=train_batch_size, shuffle=False, num_workers=2)
+    else:
+        train_dataset = trainset
+        trainloader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=train_batch_size, shuffle=True, num_workers=2)
+        valid_dataset = trainset
+        validloader = trainloader
+
+    testset = torchvision.datasets.MNIST(
+        root='./Dataset', train=False, download=True, transform=transforms.ToTensor())
+    testloader = torch.utils.data.DataLoader(
+        testset, batch_size=100, shuffle=False, num_workers=2)
+
+
+    if cali_dataset_num == -1:
+        return trainloader, validloader, testloader
+    else:
+        _, cali_dataset = torch.utils.data.random_split(valid_dataset,
+                                                      [int(len(valid_dataset)-cali_dataset_num), int(cali_dataset_num)],
+                                                      )
+        caliloader = torch.utils.data.DataLoader(cali_dataset, batch_size=100, shuffle=False, num_workers=2)
+        return trainloader, caliloader, testloader

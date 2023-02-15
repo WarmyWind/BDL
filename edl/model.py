@@ -72,6 +72,8 @@ class EvidentialClassifier(torch.nn.Module):
 class EvidentialRegressor(torch.nn.Module):
     def __init__(self, input_dim, hidden_dim, hidden_depth, output_dim=1):
         super(EvidentialRegressor, self).__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
         self.input_layer = Linear(input_dim, hidden_dim)
         self.hidden_layers = torch.nn.ModuleList(
             [Linear(hidden_dim, hidden_dim) for i in range(hidden_depth)]
@@ -81,6 +83,7 @@ class EvidentialRegressor(torch.nn.Module):
 
 
     def forward(self, x):
+        x = x.view(-1, self.input_dim)
         x_ = self.input_layer(x)
         x_ = F.relu(x_)
         for hidden_layer in self.hidden_layers:

@@ -10,13 +10,6 @@ from ignite.metrics import Average, Loss
 from ignite.contrib.handlers import ProgressBar
 from Dataset.load_dataset import *
 from utils import build_model
-from cnn.model import LeNet5
-from dnn.model import DNNClassifier, DNNBinaryClassifier
-from bnn.model import BayesianClassifier
-from mcdropout.model import MCDropoutClassifier
-from ensemble.model import BootstrapEnsemble
-from edl.model import EvidentialClassifier
-from edl.loss.discrete import edl_digamma_loss, edl_log_loss, edl_mse_loss
 
 
 def main(hparams):
@@ -30,8 +23,11 @@ def main(hparams):
     elif hparams.task == 'cifar10':
         dl_train, dl_valid, dl_test = load_cifar10(valid_size=0.2, train_batch_size=hparams.batch_size,
                                                    seed=hparams.seed)
-        classes = ('plane', 'car', 'bird', 'cat', 'deer',
-                   'dog', 'frog', 'horse', 'ship', 'truck')
+        # classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+
+    elif hparams.task == 'mnist':
+        dl_train, dl_valid, dl_test = load_mnist(valid_size=0.2, train_batch_size=hparams.batch_size,
+                                                   seed=hparams.seed)
     else:
         raise Exception('Invalid task!')
 

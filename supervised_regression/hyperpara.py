@@ -15,24 +15,26 @@ parser.add_argument(
 
 parser.add_argument("--noise_estimation",
                     type=str,
-                    default='none',
+                    default='hetero',
                     choices=["none", "hetero"],
                     help="Type of noise estiamtion")
 
 parser.add_argument(
     "--dataset_path",
-    default="Dataset/scene2_432UE_large_h_train_1004.npy",
+    # default="Dataset/scene2_432UE_large_h_train_1004.npy",
+    default="Dataset/uci_energy_obs15_ftr15.npy",
     help="Dataset path",
 )
 
-parser.add_argument("--task", default='large_channel_predict', type=str, help="Specify task")
-parser.add_argument("--batch_size", type=int, default=256, help="Batch size to use for training")
-parser.add_argument("--epochs", type=int, default=200, help="Training number of epochs")
+parser.add_argument("--task", default='uci_energy', type=str, help="Specify task")
+parser.add_argument("--data_gap", default=1, type=str, help="Gap of data (for abnormal detection test)")
+parser.add_argument("--batch_size", type=int, default=128, help="Batch size to use for training")
+parser.add_argument("--epochs", type=int, default=500, help="Training number of epochs")
 parser.add_argument("--learning_rate", type=float, default=1e-3, help="Learning rate")
-parser.add_argument("--input_dim", type=int, default=5, help="input dimension")
+parser.add_argument("--input_dim", type=int, default=5*3, help="input dimension")
 parser.add_argument("--output_dim", type=int, default=1, help="output dimension")
 parser.add_argument("--hidden_dim", type=int, default=256, help="NN hidden layer dimension")
-parser.add_argument("--hidden_depth", type=int, default=2, help="Hidden layer depth for NN")
+parser.add_argument("--hidden_depth", type=int, default=3, help="Hidden layer depth for NN")
 # parser.add_argument("--weight_decay", type=float, default=5e-4, help="Weight decay")
 
 timestamp = datetime.now().strftime("%Y-%m-%d-%A-%H-%M-%S")

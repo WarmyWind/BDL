@@ -40,8 +40,10 @@ def main(hparams):
     elif hparams.task == 'cifar10':
         dl_train, dl_calibration, dl_test = load_cifar10(valid_size=0.1, train_batch_size=hparams.batch_size,
                                                    seed=hparams.seed, cali_dataset_num=hparams.cali_dataset_num)
-        classes = ('plane', 'car', 'bird', 'cat', 'deer',
-                   'dog', 'frog', 'horse', 'ship', 'truck')
+        # classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+    elif hparams.task == 'mnist':
+        dl_train, dl_calibration, dl_test = load_mnist(valid_size=0.2, train_batch_size=hparams.batch_size,
+                                                   seed=hparams.seed)
     else:
         raise Exception('Invalid task!')
 
@@ -203,15 +205,16 @@ if __name__ == "__main__":
 
     import json
     # root_path = 'runs/cifar10/Ensemble/valid10000'
-    root_path = 'runs/HO_predict/BNN/2hidden/v10_7BS'
+    # root_path = 'runs/HO_predict/BNN/2hidden/v10_7BS'
+    root_path = 'runs/mnist/CNN/2023-02-13-Monday-16-54-05'
     with open(root_path + '/hparams.json') as file:
         hparams_dict = json.load(file)
     hparams_dict["output_dir"] = root_path
-    hparams_dict["sample_nbr"] = 10
+    hparams_dict["sample_nbr"] = 1
     hparams_dict["calibrator"] = 'temperature_scaling'  # 'isotonic_regression' or 'temperature_scaling' or 'platt_scaling(for binary classification)'
     hparams_dict["num_bins"] = 15
     hparams_dict["marginal"] = False
-    hparams_dict["cali_dataset_num"] = -1
+    hparams_dict["cali_dataset_num"] = 5000
     hparams_dict["plot"] = True
     hparams = Dotdict(hparams_dict)
     # main(hparams)

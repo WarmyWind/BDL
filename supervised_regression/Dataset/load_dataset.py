@@ -8,7 +8,12 @@ from sklearn.datasets import load_wine
 from sklearn.feature_selection import RFE, RFECV
 import torch
 
-def split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_size, seed, norm, feature_selector='none'):
+def split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_size, seed, norm, noisy_feature):
+    if noisy_feature == True:
+        temp_X = np.random.rand(X.shape[0],X.shape[1],X.shape[2])
+        temp_X[:,:,-1] = X[:,:,-1]
+        X = temp_X
+
     X, X_test, y, y_test = train_test_split(X, y, test_size=test_size, random_state=seed)
     if valid_size != 0:
         X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=valid_size / (1 - test_size), random_state=seed)
@@ -23,6 +28,8 @@ def split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_si
         y_train = sc.fit_transform(y_train)
         y_valid = sc.transform(y_valid)
         y_test = sc.transform(y_test)
+
+
 
     X_train, y_train = torch.tensor(X_train).float(), torch.tensor(y_train).float()
     X_valid, y_valid = torch.tensor(X_valid).float(), torch.tensor(y_valid).float()
@@ -40,6 +47,28 @@ def split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_si
     dl_test = torch.utils.data.DataLoader(ds_test, batch_size=len(ds_test))
 
     return dl_train, dl_valid, dl_test
+
+
+def load_uci_energy(dataset_path, input_dim, output_dim, test_size, valid_size, train_batch_size, valid_batch_size,
+                    seed=42, gap=1, norm=False, noisy_feature=False):
+    Data_set = np.load(dataset_path, allow_pickle=True).tolist()
+    X = Data_set['x']
+    y = Data_set['y']
+    if len(X.shape) == 2:
+        X = X[:, -input_dim*gap::gap]
+    elif len(X.shape) == 3:
+        input_dim = int(input_dim/X.shape[2])
+        X = X[:, -input_dim*gap::gap, :]
+    else:
+        raise Exception('Unsupported X shape')
+    y = y[..., :output_dim:gap]
+
+    # if norm == True:
+    #     X = StandardScaler().fit_transform(X)
+    #     y = StandardScaler().fit_transform(y)
+
+    # Split dataset into train, valid and test set
+    return split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_size, seed, norm, noisy_feature)
 
 
 def load_uci_crime(test_size, valid_size, train_batch_size, valid_batch_size, seed=42, norm=True):

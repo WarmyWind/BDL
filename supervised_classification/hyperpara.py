@@ -7,15 +7,15 @@ parser = argparse.ArgumentParser()
 ########################### 通用参数 #############################
 parser.add_argument(
     "--method",
-    default="Ensemble",
+    default="CNN",
     choices=["BNN", "MCDropout", "Ensemble", "EDL", 'DNN', 'CNN'],
     type=str,
     help="Specify method",
 )
 parser.add_argument(
     "--task",
-    default='cifar10',
-    choices=["HO_predict", "cifar10"],
+    default='mnist',
+    choices=["HO_predict", "cifar10", "mnist"],
     type=str,
     help="Specify task"
 )
@@ -32,10 +32,10 @@ parser.add_argument(
 #                     help="Type of noise estiamtion")
 
 parser.add_argument("--binary_classifier", type=bool, default=False, help="use binary classifier")
-parser.add_argument("--batch_size", type=int, default=128, help="Batch size to use for training")
+parser.add_argument("--batch_size", type=int, default=256, help="Batch size to use for training")
 parser.add_argument("--epochs", type=int, default=200, help="Training number of epochs")
 parser.add_argument("--learning_rate", type=float, default=1e-3, help="Learning rate")
-parser.add_argument("--input_dim", type=int, default=(32,32), help="input dimension")
+parser.add_argument("--input_dim", type=int, default=(32, 32), help="input dimension")
 parser.add_argument("--output_dim", type=int, default=10, help="output dimension, i.e. the number of classification")
 parser.add_argument("--hidden_dim", type=int, default=120, help="NN hidden layer dimension")
 parser.add_argument("--hidden_depth", type=int, default=5, help="Hidden layer depth for NN")
@@ -44,7 +44,7 @@ parser.add_argument("--hidden_depth", type=int, default=5, help="Hidden layer de
 timestamp = datetime.now().strftime("%Y-%m-%d-%A-%H-%M-%S")
 parser.add_argument(
     "--output_dir",
-    default='runs/' + parser.get_default("task") + '/' +parser.get_default("method") + '/' + timestamp,
+    default='runs/' + parser.get_default("task") + '/' + parser.get_default("method") + '/' + timestamp,
     type=str,
     help="Specify output directory"
 )

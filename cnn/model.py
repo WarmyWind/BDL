@@ -6,13 +6,22 @@ import numpy as np
 from lib.utils import get_device, one_hot_embedding
 
 class LeNet5(nn.Module):
-    def __init__(self):
+    def __init__(self, task='cifar10'):
         super().__init__()
         self.num_classes = 10
         self.loss_func = F.cross_entropy
-        self.conv1 = nn.Conv2d(3, 16, (5, 5))
-        self.conv2 = nn.Conv2d(16, 32, (5, 5))
-        self.fc1 = nn.Linear(32*5*5, 120)
+
+        if task == 'cifar10':
+            self.conv1 = nn.Conv2d(3, 16, (5, 5))
+            self.conv2 = nn.Conv2d(16, 32, (5, 5))
+            self.fc1 = nn.Linear(32*5*5, 120)
+        elif task == 'mnist':
+            self.conv1 = nn.Conv2d(1, 6, (5, 5))
+            self.conv2 = nn.Conv2d(6, 16, (5, 5))
+            self.fc1 = nn.Linear(256, 120)
+        else:
+            raise Exception('Invalid task!')
+
         self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, 10)
 

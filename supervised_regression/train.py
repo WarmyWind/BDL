@@ -1,6 +1,3 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard.writer import SummaryWriter
 # import torch_geometric
@@ -10,88 +7,20 @@ from ignite.engine import Events, Engine
 from ignite.metrics import Average, Loss
 from ignite.contrib.handlers import ProgressBar
 
-from bnn.model import BayesianRegressor
-from mcdropout.model import MCDropoutRegressor, log_gaussian_loss
-from ensemble.model import BootstrapEnsemble
-from edl.model import EvidentialRegressor
-
 from Dataset.load_dataset import *
+from utils import build_model, get_dataloader
 
 def main(hparams):
-    if hparams.task == 'large_channel_predict':
-        dl_train, dl_valid, dl_test = load_large_channel(hparams.dataset_path, hparams.input_dim, hparams.output_dim,
-                                                         test_size=0.2, valid_size=0.2, train_batch_size=hparams.batch_size,
-                                                         valid_batch_size=hparams.batch_size, seed=hparams.seed)
-    elif hparams.task == 'uci_wine':
-        dl_train, dl_valid, dl_test = load_uci_wine(test_size=0.25, valid_size=0,
-                                                    train_batch_size=hparams.batch_size,
-                                                    valid_batch_size=hparams.batch_size, seed=hparams.seed)
-    elif hparams.task == 'uci_crime':
-        dl_train, dl_valid, dl_test = load_uci_crime(test_size=0.25, valid_size=0,
-                                                     train_batch_size=hparams.batch_size,
-                                                     valid_batch_size=hparams.batch_size, seed=hparams.seed)
-    else:
-        raise Exception('Invalid task!')
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    dl_train, dl_valid, dl_test = get_dataloader(hparams)
+    model = build_model(hparams)
+    model.to(device)
 
-    method = hparams.method  # 'BNN' , 'MCDropout'
-
+    method = hparams.method
     lr = hparams.learning_rate
     epochs = hparams.epochs
     results_dir = hparams.output_dir
     writer = SummaryWriter(log_dir=str(results_dir))
-
-    input_dim = hparams.input_dim
-    hidden_dim = hparams.hidden_dim
-    output_dim = hparams.output_dim
-    dropout_rate = hparams.dropout_rate
-    if method =='BNN':
-        if hparams.noise_estimation == 'none':
-            model = BayesianRegressor(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim,
-                                      hidden_depth=hparams.hidden_depth, hetero_noise_est=False)
-        elif hparams.noise_estimation == 'hetero':
-            model = BayesianRegressor(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim,
-                                      hidden_depth=hparams.hidden_depth, hetero_noise_est=True)
-        else:
-            raise Exception("Unsupported noise estimation: \"{}\"!".format(hparams.noise_estimation))
-        if model.hetero_noise_est == False:
-            criterion = torch.nn.MSELoss()
-        else:
-            criterion = log_gaussian_loss
-
-    elif method == 'MCDropout':
-        if hparams.noise_estimation == 'none':
-            model = MCDropoutRegressor(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim,
-                                       pdrop=dropout_rate, hidden_depth=hparams.hidden_depth, hetero_noise_est=False)
-        elif hparams.noise_estimation == 'hetero':
-            model = MCDropoutRegressor(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim,
-                                       pdrop=dropout_rate, hidden_depth=hparams.hidden_depth, hetero_noise_est=True)
-        else:
-            raise Exception("Unsupported noise estimation: \"{}\"!".format(hparams.noise_estimation))
-        # loss_fn = F.mse_loss
-    elif method == 'Ensemble':
-        num_net = hparams.num_net
-        if hparams.noise_estimation == 'none':
-            model = BootstrapEnsemble(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim,
-                                      hidden_depth=hparams.hidden_depth, learn_rate=lr, weight_decay=1e-4,
-                                      num_net=num_net, hetero_noise_est=False)
-        elif hparams.noise_estimation == 'hetero':
-            model = BootstrapEnsemble(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim,
-                                      hidden_depth=hparams.hidden_depth, learn_rate=lr, weight_decay=1e-4,
-                                      num_net=num_net, hetero_noise_est=True)
-        else:
-            raise Exception("Unsupported noise estimation: \"{}\"!".format(hparams.noise_estimation))
-    elif method == 'EDL':
-        model = EvidentialRegressor(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim,
-                                  hidden_depth=hparams.hidden_depth)
-    else:
-        raise Exception('Invalid method!')
-
-    model.to(device)
-
-
-
     if method != 'Ensemble':
         parameters = [
             {"params": model.parameters(), "lr": lr},
@@ -121,7 +50,6 @@ def main(hparams):
             complexity_cost_weight = 2**(total_iteration-engine.state.iteration) / (2**total_iteration-1)
             loss = model.get_loss(inputs=x,
                                 labels=y,
-                                criterion=criterion,
                                 sample_nbr=hparams.sample_nbr,
                                 complexity_cost_weight=complexity_cost_weight)
             loss.backward()
@@ -172,7 +100,6 @@ def main(hparams):
             complexity_cost_weight = 1 / len(dl_train)
             _, _, _, mse = model.sample_detailed_loss(inputs=x,
                                                  labels=y,
-                                                 criterion=criterion,
                                                  sample_nbr=hparams.sample_nbr,
                                                  complexity_cost_weight=complexity_cost_weight)
 

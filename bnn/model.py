@@ -15,8 +15,9 @@ from sklearn.model_selection import train_test_split
 
 @variational_estimator
 class BayesianRegressor(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, hidden_depth, hetero_noise_est):
+    def __init__(self, input_dim, hidden_dim, output_dim, hidden_depth, criterion, hetero_noise_est):
         super().__init__()
+        self.criterion = criterion
         self.hetero_noise_est = hetero_noise_est
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -42,27 +43,22 @@ class BayesianRegressor(nn.Module):
         return x_
 
 
-    def get_loss(self, inputs, labels, criterion, sample_nbr, complexity_cost_weight=1):
+    def get_loss(self, inputs, labels,  sample_nbr, complexity_cost_weight=1):
         likelihood_cost = 0
         complexity_cost = 0
         # Array to collect the outputs
         for _ in range(sample_nbr):
             outputs = self(inputs)
             if self.hetero_noise_est:
-                likelihood_cost += criterion(outputs[..., :self.output_dim], labels, outputs[..., self.output_dim:].exp())
+                likelihood_cost += self.criterion(outputs[..., :self.output_dim], labels, outputs[..., self.output_dim:].exp())
             else:
-                likelihood_cost += criterion(outputs, labels)
+                likelihood_cost += self.criterion(outputs, labels)
             complexity_cost += self.nn_kl_divergence() * complexity_cost_weight
 
         loss = (likelihood_cost + complexity_cost) / sample_nbr
         return loss
 
-    def sample_detailed_loss(self,
-                                  inputs,
-                                  labels,
-                                  criterion,
-                                  sample_nbr,
-                                  complexity_cost_weight=1):
+    def sample_detailed_loss(self, inputs, labels, sample_nbr, complexity_cost_weight=1):
 
         likelihood_cost = 0
         complexity_cost = 0
@@ -75,10 +71,10 @@ class BayesianRegressor(nn.Module):
             if self.hetero_noise_est:
                 means.append(outputs[:, :self.output_dim][..., None])
                 noise_stds.append(outputs[:, self.output_dim:].exp()[..., None])
-                likelihood_cost += criterion(outputs[..., :self.output_dim], labels, outputs[..., self.output_dim:].exp())
+                likelihood_cost += self.criterion(outputs[..., :self.output_dim], labels, outputs[..., self.output_dim:].exp())
             else:
                 means.append(outputs[:, :][..., None])
-                likelihood_cost += criterion(outputs, labels)
+                likelihood_cost += self.criterion(outputs, labels)
             complexity_cost += self.nn_kl_divergence() * complexity_cost_weight
 
         # y_hat = np.array(y_hat)

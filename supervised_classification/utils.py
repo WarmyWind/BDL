@@ -52,10 +52,10 @@ def build_model(hparams):
                                      criterion=criterion)
 
     elif method == 'CNN':
-        if hparams.task == 'cifar10':
-            model = LeNet5()
+        if hparams.task == 'cifar10' or 'mnist':
+            model = LeNet5(task=hparams.task)
         else:
-            raise Exception('Now CNN only implements LeNet5 for cifar10')
+            raise Exception('Now CNN only implements LeNet5 for cifar10 and MNIST')
 
     elif method == 'DNN':
         if not hparams.binary_classifier:

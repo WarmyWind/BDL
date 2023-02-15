@@ -214,7 +214,8 @@ def plot_bar(data, xlabel, ylabel, para_list, label_list, ax=None):
 def plot_sample_uncertainty(x_test, y_pred, y_std, y_true, test_idx, in_exp_proportions=0.95, prop_type="interval",
                             recal_model=None, ax=None):
     residuals = y_pred - y_true
-    normalized_residuals = (residuals.flatten() / y_std.flatten()).reshape(-1, 1)
+    # normalized_residuals = (residuals.flatten() / y_std.flatten()).reshape(-1, 1)
+    normalized_residuals = (residuals / y_std)
     norm = stats.norm(loc=0, scale=1)
     if prop_type == "interval":
         gaussian_lower_bound = norm.ppf(0.5 - in_exp_proportions / 2.0)
@@ -225,7 +226,8 @@ def plot_sample_uncertainty(x_test, y_pred, y_std, y_true, test_idx, in_exp_prop
         above_lower = normalized_residuals >= gaussian_lower_bound
         below_upper = normalized_residuals <= gaussian_upper_bound
         within_quantile = above_lower * below_upper
-        obs_proportions = np.sum(within_quantile, axis=0).flatten()[0] / len(residuals)
+        # obs_proportions = np.sum(within_quantile, axis=0).flatten()[0] / len(residuals)
+        obs_proportions = np.sum(within_quantile, axis=0) / residuals.shape[0]
         obs_gaussian_lower_bound = norm.ppf(0.5 - obs_proportions / 2.0)
         obs_gaussian_upper_bound = norm.ppf(0.5 + obs_proportions / 2.0)
 
@@ -252,8 +254,11 @@ def plot_sample_uncertainty(x_test, y_pred, y_std, y_true, test_idx, in_exp_prop
         f, ax = plt.subplots(1, 1)
 
 
-    y_test = y_true[test_idx][..., None]
-    y_hat = y_pred[test_idx][..., None]
+    y_test = y_true[test_idx].squeeze()
+    y_hat = y_pred[test_idx].squeeze()
+    if len(y_test.shape) == 0:
+        y_test = y_test[None]
+        y_hat = y_hat[None]
     # Plot training data as black stars
     ax.plot(np.arange(len(x_test) + len(y_test)), np.concatenate([x_test, y_test]), 'k*-')
     # Plot predictive means as red line
@@ -261,11 +266,11 @@ def plot_sample_uncertainty(x_test, y_pred, y_std, y_true, test_idx, in_exp_prop
 
 
     # Shade between the lower and upper confidence bounds
-    test_lower_bound = [x_test[-1], test_lower_bound]
-    test_upper_bound = [x_test[-1], test_upper_bound]
-    true_lower_bound = [x_test[-1], true_lower_bound]
-    true_upper_bound = [x_test[-1], true_upper_bound]
-    if test_lower_bound[-1] > true_lower_bound[-1]:
+    test_lower_bound = np.concatenate([x_test[-1, None], test_lower_bound])
+    test_upper_bound = np.concatenate([x_test[-1, None], test_upper_bound])
+    true_lower_bound = np.concatenate([x_test[-1, None], true_lower_bound])
+    true_upper_bound = np.concatenate([x_test[-1, None], true_upper_bound])
+    if (test_lower_bound[-1] > true_lower_bound[-1]):
         ax.fill_between(np.arange(len(x_test) - 1, len(x_test) + len(y_test)), true_lower_bound, test_lower_bound,
                         alpha=0.4, color='blue')
         ax.fill_between(np.arange(len(x_test) - 1, len(x_test) + len(y_test)), test_lower_bound, test_upper_bound,
