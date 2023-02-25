@@ -5,6 +5,7 @@ import numpy as np
 from lib.utils import get_device, one_hot_embedding
 
 def log_gaussian_loss(output, target, sigma, no_dim=1):
+    target = target.view(output.shape)
     exponent = -0.5 * (target - output) ** 2 / sigma ** 2
     log_coeff = -no_dim * torch.log(sigma) - 0.5 * no_dim * np.log(2 * np.pi)
 
@@ -32,8 +33,11 @@ class DNNRegressor(nn.Module):
             self.output_layer = nn.Linear(hidden_dim, output_dim)
 
         self.act = nn.ReLU(inplace=True)
+        parameters = [
+            {"params": self.parameters(), "lr": learn_rate},
+        ]
+        self.optimizer = torch.optim.Adam(parameters, lr=learn_rate, weight_decay=weight_decay)
 
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=learn_rate, weight_decay=weight_decay)
 
     def forward(self, x, sample=True):
         mask = self.training or sample  # if training or sampling, mc dropout will apply random binary mask
@@ -199,10 +203,17 @@ class BootstrapEnsemble(nn.Module):
             net.eval()
 
     def save(self, dir):
+        torch.save({"norm_mean": self.norm_mean, "norm_std": self.norm_std}, dir + "/norm_para.pt")
         for i, net in enumerate(self.net_list):
             torch.save(net.state_dict(), dir + "/model{}.pt".format(i))
 
     def load(self, dir):
+        try:
+            norm_para_dict = torch.load(dir + '/norm_para.pt')
+            self.norm_mean = norm_para_dict['norm_mean']
+            self.norm_std = norm_para_dict['norm_std']
+        except:
+            pass
         for i, net in enumerate(self.net_list):
             state_dict = torch.load(dir + '/model{}.pt'.format(i))
             net.load_state_dict(state_dict)
@@ -222,11 +233,14 @@ class BootstrapEnsemble(nn.Module):
             if self.hetero_noise_est:
                 noise_stds = torch.cat(noise_stds, dim=-1)
 
-            std = means.var(dim=-1)
+            std = means.std(dim=-1)
+            alea = torch.tensor(0).to(get_device())
             if self.hetero_noise_est:
-                std = (std + noise_stds.mean(dim=-1) ** 2) ** 0.5
+                alea = noise_stds.mean(dim=-1)
+                std = (std ** 2 + alea ** 2) ** 0.5
 
             # std = means.var(dim=-1)
+            labels = labels.view(mean.shape)
             if self.hetero_noise_est:
                 loss = self.loss_func(mean, labels, noise_stds.mean(dim=-1))
             else:
@@ -236,6 +250,7 @@ class BootstrapEnsemble(nn.Module):
 
             return np.array(mean.detach().cpu()), \
                    np.array(std.detach().cpu()), \
+                   np.array(alea.detach().cpu()), \
                    loss.detach().cpu(), mse.detach().cpu()
 
         elif self.task == 'classify' or 'cifar10':
@@ -271,6 +286,7 @@ class BootstrapEnsemble(nn.Module):
         means = torch.cat(means, dim=-1)
         mean = means.mean(dim=-1)
 
+        labels = labels.view(mean.shape)
         mse = ((mean - labels) ** 2).mean()
         mape = ((mean - labels) / (labels+1e-10)).abs().mean()
 

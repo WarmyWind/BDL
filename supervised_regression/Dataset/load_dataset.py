@@ -8,7 +8,7 @@ from sklearn.datasets import load_wine
 from sklearn.feature_selection import RFE, RFECV
 import torch
 
-def split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_size, seed, norm, noisy_feature):
+def split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_size, seed, norm, noisy_feature=False):
     if noisy_feature == True:
         temp_X = np.random.rand(X.shape[0],X.shape[1],X.shape[2])
         temp_X[:,:,-1] = X[:,:,-1]
@@ -44,7 +44,7 @@ def split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_si
     dl_valid = torch.utils.data.DataLoader(ds_valid, batch_size=valid_batch_size, shuffle=True)
 
     ds_test = torch.utils.data.TensorDataset(X_test, y_test)
-    dl_test = torch.utils.data.DataLoader(ds_test, batch_size=len(ds_test))
+    dl_test = torch.utils.data.DataLoader(ds_test, batch_size=int(len(ds_test)/5))
 
     return dl_train, dl_valid, dl_test
 
@@ -123,8 +123,8 @@ def load_uci_wine(test_size, valid_size, train_batch_size, valid_batch_size, see
 
 def load_large_channel(dataset_path, input_dim, output_dim, test_size, valid_size, train_batch_size, valid_batch_size, seed=42, norm=True):
     Data_set = np.load(dataset_path, allow_pickle=True).tolist()
-    X = Data_set['x']
-    y = Data_set['y']
+    X = np.array(Data_set['x'])
+    y = np.array(Data_set['y'])
     X = X[:, -input_dim:]
     y = y[:, :output_dim]
     # if norm == True:
@@ -133,3 +133,25 @@ def load_large_channel(dataset_path, input_dim, output_dim, test_size, valid_siz
 
     # Split dataset into train, valid and test set
     return split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_size, seed, norm)
+
+def load_ULA_channel(dataset_path, input_dim, output_dim, test_size, valid_size, train_batch_size, valid_batch_size,
+                     gap=1, seed=42, norm=False):
+    Data_set = np.load(dataset_path, allow_pickle=True).tolist()
+    X = np.array(Data_set['x'])
+    y = np.array(Data_set['y'])
+    if len(X.shape) == 2:
+        X = X[:, -input_dim * gap::gap]
+        y = y[:, :output_dim:gap]
+    elif len(X.shape) == 3:
+        input_dim = int(input_dim / X.shape[2])
+        X = X[:, -input_dim * gap::gap, :]
+        output_dim = int(output_dim / y.shape[2])
+        y = y[:, :output_dim:gap, :]
+    else:
+        raise Exception('Unsupported X shape')
+
+    mean = np.array(Data_set['mean'])
+    std = np.array(Data_set['std'])
+    dl_train, dl_valid, dl_test = split_data_set(X, y, test_size, valid_size, train_batch_size, valid_batch_size, seed, norm)
+    return dl_train, dl_valid, dl_test, mean, std
+

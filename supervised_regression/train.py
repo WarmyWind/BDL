@@ -1,6 +1,5 @@
 import torch.optim as optim
 from torch.utils.tensorboard.writer import SummaryWriter
-# import torch_geometric
 import numpy as np
 
 from ignite.engine import Events, Engine
@@ -12,8 +11,9 @@ from utils import build_model, get_dataloader
 
 def main(hparams):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    dl_train, dl_valid, dl_test = get_dataloader(hparams)
+    dl_train, dl_valid, dl_test, norm_mean, norm_std = get_dataloader(hparams)
     model = build_model(hparams)
+    model.norm_mean, model.norm_std = norm_mean, norm_std
     model.to(device)
 
     method = hparams.method
@@ -47,7 +47,9 @@ def main(hparams):
 
         elif method == 'BNN':
             total_iteration = len(dl_train)
-            complexity_cost_weight = 2**(total_iteration-engine.state.iteration) / (2**total_iteration-1)
+            anneal_coe = np.min([engine.state.epoch*0.05, 1])
+            complexity_cost_weight = anneal_coe * 2**(total_iteration-engine.state.iteration) \
+                                     / (2**total_iteration-1)
             loss = model.get_loss(inputs=x,
                                 labels=y,
                                 sample_nbr=hparams.sample_nbr,
@@ -74,6 +76,7 @@ def main(hparams):
 
         elif method == 'EDL':
             outputs = model(x)
+            y = y.view(y.shape[0],-1)
             loss = model.loss_func(outputs, y)
             loss.backward()
             optimizer.step()
@@ -92,22 +95,22 @@ def main(hparams):
         y = y.to(device)
 
         if method == 'MCDropout':
-            _, _, _, mse = model.sample_detailed_loss(inputs=x,
+            _, _, _, _, mse = model.sample_detailed_loss(inputs=x,
                                                  labels=y,
                                                  sample_nbr=hparams.sample_nbr)
 
         elif method == 'BNN':
             complexity_cost_weight = 1 / len(dl_train)
-            _, _, _, mse = model.sample_detailed_loss(inputs=x,
+            _, _, _, _, mse = model.sample_detailed_loss(inputs=x,
                                                  labels=y,
                                                  sample_nbr=hparams.sample_nbr,
                                                  complexity_cost_weight=complexity_cost_weight)
 
         elif method == 'Ensemble':
-            _, _, _, mse = model.sample_detailed_loss(inputs=x, labels=y)
+            _, _, _, _, mse = model.sample_detailed_loss(inputs=x, labels=y)
 
         elif method == 'EDL':
-            _, _, _, mse = model.sample_detailed_loss(inputs=x, labels=y)
+            _, _, _, _, mse = model.sample_detailed_loss(inputs=x, labels=y)
 
         else:
             raise Exception('Invalid method!')
@@ -140,7 +143,8 @@ def main(hparams):
             print("\033[5;33mBest rmse before:{:.4f}, now:{:.4f} Saving model\033[0m".format(best_rmse, rmse_valid))
             best_rmse = rmse_valid
             if method != 'Ensemble':
-                torch.save(model.state_dict(), results_dir + "/model.pt")
+                model.save(results_dir + "/model.pt")
+                # torch.save(model.state_dict(), results_dir + "/model.pt")
             else:
                 model.save(results_dir)
 

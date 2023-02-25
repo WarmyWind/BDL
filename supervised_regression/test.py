@@ -1,9 +1,3 @@
-import torch
-# import torch_geometric
-from bnn.model import BayesianRegressor
-from mcdropout.model import MCDropoutRegressor, log_gaussian_loss
-from ensemble.model import BootstrapEnsemble
-from edl.model import EvidentialRegressor
 from lib.plot_func import *
 from matplotlib import pyplot as plt
 import matplotlib
@@ -20,20 +14,18 @@ uct.viz.update_rc("ytick.labelsize", 14)  # Set font size for yaxis tick labels
 
 def main(hparams):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    dl_train, dl_calibration, dl_test = get_dataloader(hparams)
-
-    hparams.data_gap = 3
-    noisy_feature = False
-    hparams.dataset_path = "Dataset/uci_energy_obs25_ftr25.npy"
-    _, _, dl_abnormal = get_abnormal_dataloader(hparams, noisy_feature)
+    dl_train, dl_calibration, dl_test, norm_mean, norm_std = get_dataloader(hparams)
 
     method = hparams.method  # 'BNN' , 'MCDropout'
     model = build_model(hparams)
 
     if method != "Ensemble":
-        state_dict = torch.load(hparams.output_dir+'/model.pt')
-        model.load_state_dict(state_dict)
-        model.to(device)
+        try:
+            model.load(hparams.output_dir)
+            model.to(device)
+        except:
+            state_dict = torch.load(hparams.output_dir+'/model.pt')
+            model.load_state_dict(state_dict)
     else:
         model.load(hparams.output_dir)
         model.to(device)
@@ -47,7 +39,7 @@ def main(hparams):
         y = y.to(device)
 
         if method == 'MCDropout':
-            y_mean, y_std, loss, mse = model.sample_detailed_loss(inputs=x,
+            y_mean, y_std, alea, loss, mse = model.sample_detailed_loss(inputs=x,
                                                  labels=y,
                                                  sample_nbr=hparams.sample_nbr)
 
@@ -57,7 +49,7 @@ def main(hparams):
 
         elif method == 'BNN':
             complexity_cost_weight = 1 / len(dl_train)
-            y_mean, y_std, loss, mse = model.sample_detailed_loss(inputs=x,
+            y_mean, y_std, alea, loss, mse = model.sample_detailed_loss(inputs=x,
                                                  labels=y,
                                                  sample_nbr=hparams.sample_nbr,
                                                  complexity_cost_weight=complexity_cost_weight)
@@ -67,57 +59,45 @@ def main(hparams):
                                                   sample_nbr=hparams.sample_nbr)
 
         elif method == 'Ensemble':
-            y_mean, y_std, loss, mse = model.sample_detailed_loss(inputs=x, labels=y)
+            y_mean, y_std, alea, loss, mse = model.sample_detailed_loss(inputs=x, labels=y)
             mse, mape = model.get_accuracy_matrix(inputs=x, labels=y)
 
         elif method == 'EDL':
-            y_mean, y_std, loss, mse = model.sample_detailed_loss(inputs=x, labels=y)
+            y_mean, y_std, alea, loss, mse = model.sample_detailed_loss(inputs=x, labels=y)
             mse, mape = model.get_accuracy_matrix(inputs=x, labels=y)
         else:
             raise Exception('Invalid method!')
 
         rmse = mse ** 0.5
-        return y_mean, y_std, rmse, mape
+        return y_mean, y_std, alea, rmse, mape
 
-    # Test on Abnormal Set
-    test_labels = torch.tensor([])
-    test_y_mean, test_y_std = np.empty((0, hparams.output_dim)), np.empty((0, hparams.output_dim))
-    rmse, mape = 0, 0
-    for batch in dl_abnormal:
-        # x = batch[0].detach().cpu().numpy()
-        # _label = batch[1].detach().cpu().numpy()
-        test_labels = torch.cat((test_labels, batch[1]))
-        _y_mean, _y_std, _rmse, _mape = test_step(batch)
-        test_y_mean = np.concatenate((test_y_mean, _y_mean), 0)
-        test_y_std = np.concatenate((test_y_std, _y_std), 0)
-        rmse += _rmse**2 * len(batch[1])
-        mape += _mape * len(batch[1])
-    rmse = (rmse/len(test_labels))**0.5
-    mape = mape/len(test_labels)
-    mse_arr = np.mean(np.square(test_y_mean - test_labels.detach().cpu().numpy()), axis=0)
-    rmse_arr = np.sqrt(mse_arr)
-    std_arr = np.mean(test_y_std, axis=0)
-    print("Abnormal test: RMSE={}\n      std={}\n".format(rmse_arr, std_arr))
 
     # Test on Test Set
     test_labels = torch.tensor([])
-    test_y_mean, test_y_std = np.empty((0, hparams.output_dim)), np.empty((0, hparams.output_dim))
+    test_y_mean, test_y_std, test_alea = np.empty((0, hparams.output_dim)), np.empty((0, hparams.output_dim)), np.empty((0, hparams.output_dim))
     rmse, mape = 0, 0
     for batch in dl_test:
         # x = batch[0].detach().cpu().numpy()
         # _label = batch[1].detach().cpu().numpy()
         test_labels = torch.cat((test_labels, batch[1]))
-        _y_mean, _y_std, _rmse, _mape = test_step(batch)
+        _y_mean, _y_std, _alea, _rmse, _mape = test_step(batch)
         test_y_mean = np.concatenate((test_y_mean, _y_mean), 0)
         test_y_std = np.concatenate((test_y_std, _y_std), 0)
+        test_alea = np.concatenate((test_alea, _alea), 0)
         rmse += _rmse**2 * len(batch[1])
         mape += _mape * len(batch[1])
+    output_dims = test_labels.shape[1]
+    test_labels = test_labels.reshape(test_labels.shape[0], -1)
     rmse = (rmse/len(test_labels))**0.5
     mape = mape/len(test_labels)
     mse_arr = np.mean(np.square(test_y_mean - test_labels.detach().cpu().numpy()), axis=0)
+    mse_arr = np.mean(np.reshape(mse_arr,(output_dims, -1)), axis=1)
     rmse_arr = np.sqrt(mse_arr)
     std_arr = np.mean(test_y_std, axis=0)
-    print("Test: RMSE={}\n      std={}\n".format(rmse_arr, std_arr))
+    std_arr = np.mean(np.reshape(std_arr, (output_dims, -1)), axis=1)
+    alea_arr = np.mean(test_alea, axis=0)
+    alea_arr = np.mean(np.reshape(alea_arr, (output_dims, -1)), axis=1)
+    print("Test: RMSE={}\n std={}\n alea={}".format(rmse_arr, std_arr, alea_arr))
 
     data_raw_shape = test_y_mean.shape
     test_y_mean = test_y_mean.flatten().squeeze()
@@ -156,17 +136,18 @@ def main(hparams):
         ax1.title.set_text("Before Calibration")
 
         # plot a sample before calibration
-        fig2, (ax2_1, ax2_2) = plt.subplots(1, 2, figsize=(10, 5))
-        test_idx = 10
-        x_test = dl_test.dataset.__getitem__(test_idx)[0].detach().cpu().numpy()
-        if hparams.task == 'uci_energy':
-            x_test = x_test[:, -1]
-        test_confidence = 0.3
-        ax2_1 = plot_sample_uncertainty(x_test, test_y_mean.reshape(data_raw_shape), test_y_std.reshape(data_raw_shape),
-                                        test_labels.reshape(data_raw_shape), test_idx,
-                                        in_exp_proportions=test_confidence, ax=ax2_1)
-        ax2_1.title.set_text("Before Calibration")
-        ax2_1.set_ylabel("Value")
+        if hparams.plot_sample == True:
+            fig2, (ax2_1, ax2_2) = plt.subplots(1, 2, figsize=(10, 5))
+            test_idx = 50
+            x_test = dl_test.dataset.__getitem__(test_idx)[0].detach().cpu().numpy()
+            if hparams.task == 'uci_energy':
+                x_test = x_test[:, -1]
+            test_confidence = 0.3
+            ax2_1 = plot_sample_uncertainty(x_test, test_y_mean.reshape(data_raw_shape), test_y_std.reshape(data_raw_shape),
+                                            test_labels.reshape(data_raw_shape), test_idx,
+                                            in_exp_proportions=test_confidence, ax=ax2_1)
+            ax2_1.title.set_text("Before Calibration")
+            ax2_1.set_ylabel("Value")
 
     ############################# Calibration #############################
     cali_labels = torch.tensor([])
@@ -174,7 +155,7 @@ def main(hparams):
     for batch in dl_calibration:
         # _cali_labels = batch[1].detach().cpu().numpy()
         cali_labels = torch.cat((cali_labels, batch[1]))
-        _y_mean, _y_std, _, _ = test_step(batch)
+        _y_mean, _y_std, _, _, _ = test_step(batch)
         cali_y_mean = np.concatenate((cali_y_mean, _y_mean), 0)
         cali_y_std = np.concatenate((cali_y_std, _y_std), 0)
 
@@ -207,13 +188,6 @@ def main(hparams):
     print("MACE: {:.5f}, RMSCE: {:.5f}, MA: {:.5f}".format(mace, rmsce, ma))
 
     if hparams.plot == True:
-        # plot a sample after calibration
-        # x_test = x[test_idx]
-        ax2_2 = plot_sample_uncertainty(x_test, test_y_mean.reshape(data_raw_shape), test_y_std.reshape(data_raw_shape),
-                                        test_labels.reshape(data_raw_shape), test_idx, in_exp_proportions=test_confidence,
-                                        ax=ax2_2, recal_model=recal_model)
-        ax2_2.title.set_text("After Calibration")
-
         # plot confidence curve after calibration
         uct.plot_calibration(
             test_y_mean, test_y_std, test_labels,
@@ -222,8 +196,15 @@ def main(hparams):
             ax=ax2,
         )
         ax2.title.set_text("After Calibration")
+        if hparams.plot_sample == True:
+            # plot a sample after calibration
+            # x_test = x[test_idx]
+            ax2_2 = plot_sample_uncertainty(x_test, test_y_mean.reshape(data_raw_shape), test_y_std.reshape(data_raw_shape),
+                                            test_labels.reshape(data_raw_shape), test_idx, in_exp_proportions=test_confidence,
+                                            ax=ax2_2, recal_model=recal_model)
+            ax2_2.title.set_text("After Calibration")
+
         plt.show()
-        # plt.close()
 
     return rmse, mape, MSCE_before, MSCE_after
 
@@ -233,12 +214,14 @@ if __name__ == "__main__":
         __getattr__ = dict.__getitem__
 
     import json
-    root_path = 'runs/uci_energy/MCDropout/input05_output=1'
+    root_path = 'runs/ULA_channel/EDL/output1_5ms'
     with open(root_path + '/hparams.json') as file:
         hparams_dict = json.load(file)
     hparams_dict["output_dir"] = root_path
-    hparams_dict["sample_nbr"] = 10
+    hparams_dict["norm"] = False
+    hparams_dict["sample_nbr"] = 1
     hparams_dict["plot"] = True
+    hparams_dict["plot_sample"] = False
     hparams = Dotdict(hparams_dict)
     # main(hparams)
     test_times = 1

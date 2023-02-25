@@ -6,7 +6,8 @@ from lib.utils import get_device, one_hot_embedding
 
 
 def log_gaussian_loss(output, target, sigma, no_dim=1):
-    exponent = -0.5 * (target - output) ** 2 / sigma ** 2
+    target = target.view(output.shape)
+    exponent = -0.5 * (target - output) ** 2 / (sigma ** 2 + 1e-12)
     log_coeff = -no_dim * torch.log(sigma) - 0.5 * no_dim * np.log(2 * np.pi)
 
     return - (log_coeff + exponent).sum()
@@ -62,6 +63,7 @@ class MCDropoutRegressor(nn.Module):
 
     def get_loss(self, inputs, labels):
         outputs = self(inputs)
+        labels = labels.view(labels.shape[0], -1)
         if self.hetero_noise_est:
             loss = self.loss_func(outputs[:, :self.output_dim], labels, outputs[:, self.output_dim:].exp())
         else:
@@ -84,10 +86,13 @@ class MCDropoutRegressor(nn.Module):
         mean = means.mean(dim=-1)
         if self.hetero_noise_est:
             noise_stds = torch.cat(noise_stds, dim=-1)
+            alea = noise_stds.mean(dim=-1)
+            std = (means.std(dim=-1) ** 2 + alea ** 2) ** 0.5
 
-        std = means.std(dim=-1)
-        if self.hetero_noise_est:
-            std = (std ** 2 + noise_stds.mean(dim=-1) ** 2) ** 0.5
+        else:
+            std = means.std(dim=-1)
+            alea = torch.zeros_like(std).to(get_device())
+
 
         # std = means.var(dim=-1)
         if self.hetero_noise_est:
@@ -95,10 +100,11 @@ class MCDropoutRegressor(nn.Module):
         else:
             loss = self.loss_func(mean, labels, torch.tensor(1))
 
-        mse = ((mean - labels) ** 2).mean()
+        mse = ((mean - labels.view(mean.shape)) ** 2).mean()
 
         return np.array(mean.detach().cpu()), \
                np.array(std.detach().cpu()), \
+               np.array(alea.detach().cpu()), \
                loss.detach().cpu(), mse.detach().cpu()
 
     def get_accuracy_matrix(self, inputs, labels, sample_nbr):
@@ -111,10 +117,22 @@ class MCDropoutRegressor(nn.Module):
         means = torch.cat(means, dim=-1)
         mean = means.mean(dim=-1)
 
+        labels = labels.view(mean.shape)
         mse = ((mean - labels) ** 2).mean()
         mape = ((mean - labels) / (labels+1e-10)).abs().mean()
 
         return mse.detach().cpu(), mape.detach().cpu()
+
+
+    def save(self, dir):
+        checkpoint = {'model': self.state_dict(), 'norm_mean':self.norm_mean, 'norm_std':self.norm_std}
+        torch.save(checkpoint, dir)
+
+    def load(self, dir):
+        checkpoint = torch.load(dir + '/model.pt')
+        self.load_state_dict(checkpoint['model'])
+        self.norm_mean = checkpoint['norm_mean']
+        self.norm_std = checkpoint['norm_std']
 
 
 class MCDropoutClassifier(nn.Module):
@@ -189,3 +207,13 @@ class MCDropoutClassifier(nn.Module):
         return np.array(mean.detach().cpu()), \
             np.array(prob.detach().cpu()), \
             loss.detach().cpu(), acc.detach().cpu()
+
+    # def save(self, dir):
+    #     checkpoint = {'model': self.state_dict(), 'norm_mean':self.norm_mean, 'norm_std':self.norm_std}
+    #     torch.save(checkpoint, dir)
+    #
+    # def load(self, dir):
+    #     checkpoint = torch.load(dir)
+    #     self.load_state_dict(checkpoint['model'])
+    #     self.norm_mean = checkpoint['norm_mean']
+    #     self.norm_std = checkpoint['norm_std']

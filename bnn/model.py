@@ -15,17 +15,23 @@ from sklearn.model_selection import train_test_split
 
 @variational_estimator
 class BayesianRegressor(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, hidden_depth, criterion, hetero_noise_est):
+    def __init__(self, input_dim, hidden_dim, output_dim, hidden_depth, criterion, hetero_noise_est, only_output_layer):
         super().__init__()
         self.criterion = criterion
         self.hetero_noise_est = hetero_noise_est
         self.input_dim = input_dim
         self.output_dim = output_dim
         # self.linear = nn.Linear(input_dim, output_dim)
-        self.input_layer = BayesianLinear(input_dim, hidden_dim)
-        self.hidden_layers = nn.ModuleList(
-            [BayesianLinear(hidden_dim, hidden_dim) for i in range(hidden_depth)]
-        )
+        if not only_output_layer:
+            self.input_layer = BayesianLinear(input_dim, hidden_dim)
+            self.hidden_layers = nn.ModuleList(
+                [BayesianLinear(hidden_dim, hidden_dim) for i in range(hidden_depth)]
+            )
+        else:
+            self.input_layer = nn.Linear(input_dim, hidden_dim)
+            self.hidden_layers = nn.ModuleList(
+                [nn.Linear(hidden_dim, hidden_dim) for i in range(hidden_depth)]
+            )
         # self.blinear2 = BayesianLinear(hidden_dim, hidden_dim)
         if hetero_noise_est:
             self.output_layer = BayesianLinear(hidden_dim, 2 * output_dim)
@@ -33,6 +39,8 @@ class BayesianRegressor(nn.Module):
             self.output_layer = BayesianLinear(hidden_dim, output_dim)
 
     def forward(self, x):
+        x = x.view(-1, self.input_dim)
+
         x_ = self.input_layer(x)
         x_ = F.relu(x_)
         for hidden_layer in self.hidden_layers:
@@ -44,6 +52,7 @@ class BayesianRegressor(nn.Module):
 
 
     def get_loss(self, inputs, labels,  sample_nbr, complexity_cost_weight=1):
+        labels = labels.view(labels.shape[0], -1)
         likelihood_cost = 0
         complexity_cost = 0
         # Array to collect the outputs
@@ -59,11 +68,10 @@ class BayesianRegressor(nn.Module):
         return loss
 
     def sample_detailed_loss(self, inputs, labels, sample_nbr, complexity_cost_weight=1):
-
+        labels = labels.view(labels.shape[0], -1)
         likelihood_cost = 0
         complexity_cost = 0
         # Array to collect the outputs
-        # y_hat = []
         means, noise_stds = [], []
         for _ in range(sample_nbr):
             outputs = self(inputs)
@@ -81,19 +89,23 @@ class BayesianRegressor(nn.Module):
         if self.hetero_noise_est:
             means, noise_stds = torch.cat(means, dim=-1), torch.cat(noise_stds, dim=-1)
             mean = means.mean(dim=-1)
-            std = (means.var(dim=-1) + noise_stds.mean(dim=-1) ** 2) ** 0.5
+            alea = noise_stds.mean(dim=-1)
+            std = (means.std(dim=-1) ** 2 + alea ** 2) ** 0.5
         else:
             means = torch.cat(means, dim=-1)
             mean = means.mean(dim=-1)
-            std = means.var(dim=-1)
-        mse = ((mean - labels) ** 2).mean()
+            std = means.std(dim=-1)
+            alea = torch.zeros_like(std).to(get_device())
 
+        mse = ((mean - labels) ** 2).mean()
         loss = (likelihood_cost + complexity_cost) / sample_nbr
         return np.array(mean.detach().cpu()), \
-            np.array(std.detach().cpu()), \
-            loss.detach().cpu(), mse.detach().cpu()
+               np.array(std.detach().cpu()), \
+               np.array(alea.detach().cpu()), \
+               loss.detach().cpu(), mse.detach().cpu()
 
     def get_accuracy_matrix(self, inputs, labels, sample_nbr):
+        labels = labels.view(labels.shape[0], -1)
         means, noise_stds = [], []
         for _ in range(sample_nbr):
             outputs = self(inputs)
@@ -106,6 +118,16 @@ class BayesianRegressor(nn.Module):
         mape = ((mean - labels) / (labels+1e-10)).abs().mean()
 
         return mse.detach().cpu(), mape.detach().cpu()
+
+    def save(self, dir):
+        checkpoint = {'model': self.state_dict(), 'norm_mean': self.norm_mean, 'norm_std': self.norm_std}
+        torch.save(checkpoint, dir)
+
+    def load(self, dir):
+        checkpoint = torch.load(dir + '/model.pt')
+        self.load_state_dict(checkpoint['model'])
+        self.norm_mean = checkpoint['norm_mean']
+        self.norm_std = checkpoint['norm_std']
 
 
 # def evaluate_regression(regressor, X, y, samples=100, std_multiplier=2):

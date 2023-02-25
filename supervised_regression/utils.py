@@ -4,11 +4,19 @@ from ensemble.model import BootstrapEnsemble
 from edl.model import EvidentialRegressor
 from Dataset.load_dataset import *
 
-def get_dataloader(hparams):
+def get_dataloader(hparams, mean=0, std=1):
+    norm = hparams.norm
     if hparams.task == 'large_channel_predict':
         dl_train, dl_valid, dl_test = load_large_channel(hparams.dataset_path, hparams.input_dim, hparams.output_dim,
                                                          test_size=0.2, valid_size=0.2, train_batch_size=hparams.batch_size,
-                                                         valid_batch_size=hparams.batch_size, seed=hparams.seed)
+                                                         valid_batch_size=hparams.batch_size, seed=hparams.seed, norm=norm)
+    elif hparams.task == 'ULA_channel':
+        dl_train, dl_valid, dl_test, mean, std = load_ULA_channel(hparams.dataset_path, hparams.input_dim, hparams.output_dim,
+                                                         test_size=0.1, valid_size=0.1,
+                                                         train_batch_size=hparams.batch_size,
+                                                         valid_batch_size=hparams.batch_size, seed=hparams.seed,
+                                                         norm=norm)
+
     elif hparams.task == 'uci_wine':
         dl_train, dl_valid, dl_test = load_uci_wine(test_size=0.25, valid_size=0,
                                                     train_batch_size=hparams.batch_size,
@@ -30,7 +38,7 @@ def get_dataloader(hparams):
     else:
         raise Exception('Invalid task!')
 
-    return dl_train, dl_valid, dl_test
+    return dl_train, dl_valid, dl_test, mean, std
 
 def get_abnormal_dataloader(hparams, noisy_feature):
     if hparams.task == 'large_channel_predict':
@@ -62,16 +70,18 @@ def build_model(hparams):
     hidden_dim = hparams.hidden_dim
     output_dim = hparams.output_dim
     dropout_rate = hparams.dropout_rate
-    if method =='BNN':
+    if method == 'BNN':
 
         if hparams.noise_estimation == 'none':
             criterion = torch.nn.MSELoss()
             model = BayesianRegressor(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim,
-                                      hidden_depth=hparams.hidden_depth, criterion=criterion, hetero_noise_est=False)
+                                      hidden_depth=hparams.hidden_depth, criterion=criterion, hetero_noise_est=False,
+                                      only_output_layer=hparams.only_output_layer)
         elif hparams.noise_estimation == 'hetero':
             criterion = log_gaussian_loss
             model = BayesianRegressor(input_dim=input_dim, hidden_dim=hidden_dim, output_dim=output_dim,
-                                      hidden_depth=hparams.hidden_depth, criterion=criterion, hetero_noise_est=True)
+                                      hidden_depth=hparams.hidden_depth, criterion=criterion, hetero_noise_est=True,
+                                      only_output_layer=hparams.only_output_layer)
         else:
             raise Exception("Unsupported noise estimation: \"{}\"!".format(hparams.noise_estimation))
 

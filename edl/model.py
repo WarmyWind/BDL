@@ -99,15 +99,19 @@ class EvidentialRegressor(torch.nn.Module):
         aleatoric = beta/(alpha-1)
         epistemic = beta/nu/(alpha-1)
         std = (aleatoric + epistemic) ** 0.5
+        alea = aleatoric ** 0.5
 
+        labels = labels.view(labels.shape[0], -1)
         loss = self.loss_func(outputs, labels)
         mse = ((mean - labels) ** 2).mean()
 
         return np.array(mean.detach().cpu()), \
                np.array(std.detach().cpu()), \
+               np.array(alea.detach().cpu()), \
                loss.detach().cpu(), mse.detach().cpu()
 
     def get_accuracy_matrix(self, inputs, labels):
+        labels = labels.view(labels.shape[0], -1)
         means, noise_stds = [], []
 
         for _ in range(1):
@@ -121,3 +125,13 @@ class EvidentialRegressor(torch.nn.Module):
         mape = ((mean - labels) / (labels+1e-10)).abs().mean()
 
         return mse.detach().cpu(), mape.detach().cpu()
+
+    def save(self, dir):
+        checkpoint = {'model': self.state_dict(), 'norm_mean': self.norm_mean, 'norm_std': self.norm_std}
+        torch.save(checkpoint, dir)
+
+    def load(self, dir):
+        checkpoint = torch.load(dir + '/model.pt')
+        self.load_state_dict(checkpoint['model'])
+        self.norm_mean = checkpoint['norm_mean']
+        self.norm_std = checkpoint['norm_std']
